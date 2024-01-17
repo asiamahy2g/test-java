@@ -1,92 +1,48 @@
-
 pipeline {
-    triggers {
-  pollSCM('* * * * *')
-    }
-   agent any
+    agent any
     tools {
-  maven 'M2_HOME'
-  }
-
-   environment {
-        NEXUS_VERSION = "nexus3"
-        NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "ec2-54-167-81-5.compute-1.amazonaws.com:8081"
-        NEXUS_REPOSITORY = "geo"
-        NEXUS_CREDENTIAL_ID = "nexus-userID"
+        maven 'M2_HOME'
     }
-
     stages {
-
-        stage("build & SonarQube analysis") {          
+        stage('Sonarqube scan') {
+            agent {docker { image 'maven:3-amazoncorretto-17-debian' }}
             steps {
-                    withSonarQubeEnv('sonar') {
-                        sh 'mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=kserge2001_geo'
-                    }
-             
-            }
-        }
-
-        stage('Check Quality Gate') {
-            steps {
-                echo 'Checking quality gate...'
-                    script {
-                    timeout(time: 20, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "Pipeline stopped because of quality gate status: ${qg.status}"
-                            } 
+                script {
+                    def mavenHome = tool 'M2_HOME'
+                    withEnv(["PATH+MAVEN=${mavenHome}/bin"]) {
+                        withSonarQubeEnv('sonarQube') {
+                            sh 'mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=asiamahy2g_test-java'
                         }
                     }
-               
+                }
             }
         }
 
-         stage("Maven Build Back-End") {
+        stage('All Maven commands') {
             steps {
-                echo 'Build Back-End Project...'
-                    script {
-                    sh "mvn package -DskipTests=true"
-                    }
-             
+                sh 'mvn clean compile install package'
             }
         }
 
-         stage("Publish to Nexus Repository Manager") {
+        stage('Upload artifact to Jfrog') {
             steps {
-                echo 'Publish to Nexus Repository Manager...'
-                    script {
-                    pom = readMavenPom file: "pom.xml";
-                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
-                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
-                    artifactPath = filesByGlob[0].path;
-                    artifactExists = fileExists artifactPath;
-                    if(artifactExists) {
-                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version}";
-                        nexusArtifactUploader(
-                            nexusVersion: NEXUS_VERSION,
-                            protocol: NEXUS_PROTOCOL,
-                            nexusUrl: NEXUS_URL,
-                            groupId: pom.groupId,
-                            version: pom.version,
-                            repository: NEXUS_REPOSITORY,
-                            credentialsId: NEXUS_CREDENTIAL_ID,
-                            artifacts: [
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: artifactPath,
-                                type: pom.packaging],
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: "pom.xml",
-                                type: "pom"]
-                            ]
-                        );
-                        } else {
-                        error "*** File: ${artifactPath}, could not be found";
-                        }
-                    }
-                
+                script {
+                    sh 'curl -uadmin:AP4y6DmdHPZsNpu4PoxakusUxFz -T target/bio*.jar "http://44.211.213.102:8081/artifactory/geoapp/"'
+                }
+            }
+        }
+
+        stage('Image build') {
+            steps {
+                sh 'aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 540738452774.dkr.ecr.us-east-1.amazonaws.com'
+                sh 'docker build -t geoapp-test .'
+            }
+        }
+
+        stage('Push image') {
+            steps {
+                sh 'docker tag geoapp-test:latest 540738452774.dkr.ecr.us-east-1.amazonaws.com/geoapp-test:latest'
+                sh 'docker push 540738452774.dkr.ecr.us-east-1.amazonaws.com/geoapp-test:latest'
             }
         }
     }
