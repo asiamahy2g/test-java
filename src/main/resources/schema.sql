@@ -14,4 +14,4 @@ CREATE TABLE USER (
 );
 
 --INSERT INTO USER (id, first_name, last_name, username, password, authority, gender) VALUES
---  (1,'utrains', 'root', 'utrains-root@utrains.com','school1','DOCTOR', 'Male');
+--  (1,'manny', 'root', 'manny-root@manny.com','school1','DOCTOR', 'Male');
